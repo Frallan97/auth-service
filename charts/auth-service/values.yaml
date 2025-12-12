@@ -7,7 +7,7 @@ backend:
     pullPolicy: Always
 
   imagePullSecrets:
-    - ghcr-pull-secret
+    - name: ghcr-pull-secret
 
   service:
     type: ClusterIP
@@ -40,7 +40,7 @@ frontend:
     pullPolicy: Always
 
   imagePullSecrets:
-    - ghcr-pull-secret
+    - name: ghcr-pull-secret
 
   service:
     type: ClusterIP
