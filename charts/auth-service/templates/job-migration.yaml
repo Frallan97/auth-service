@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "auth-service.fullname" . }}-migration-{{ .Release.Revision }}
+  labels:
+    {{- include "auth-service.backend.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "auth-service.backend.selectorLabels" . | nindent 8 }}
+        job: migration
+    spec:
+      {{- with .Values.backend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z {{ include "auth-service.fullname" . }}-postgres {{ .Values.database.service.port }}; do echo waiting for postgres; sleep 2; done;']
+      containers:
+      - name: migration
+        image: "migrate/migrate:latest"
+        args:
+        - "-path=/migrations"
+        - "-database=$(DATABASE_URL)"
+        - "up"
+        envFrom:
+        - configMapRef:
+            name: {{ include "auth-service.fullname" . }}-backend
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "auth-service.fullname" . }}-postgres
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: migrations
+          mountPath: /migrations
+      volumes:
+      - name: migrations
+        configMap:
+          name: {{ include "auth-service.fullname" . }}-migrations

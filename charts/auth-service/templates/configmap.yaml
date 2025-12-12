@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "auth-service.fullname" . }}-backend
+  labels:
+    {{- include "auth-service.backend.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.backend.env.PORT | quote }}
+  ENV: {{ .Values.backend.env.ENV | quote }}
+  DATABASE_URL: "postgresql://{{ .Values.database.env.POSTGRES_USER }}:$(POSTGRES_PASSWORD)@{{ include "auth-service.fullname" . }}-postgres:{{ .Values.database.service.port }}/{{ .Values.database.env.POSTGRES_DB }}?sslmode=disable"
+  JWT_ACCESS_TOKEN_EXPIRY: {{ .Values.backend.env.JWT_ACCESS_TOKEN_EXPIRY | quote }}
+  JWT_REFRESH_TOKEN_EXPIRY: {{ .Values.backend.env.JWT_REFRESH_TOKEN_EXPIRY | quote }}
+  JWT_PRIVATE_KEY_PATH: {{ .Values.backend.env.JWT_PRIVATE_KEY_PATH | quote }}
+  JWT_PUBLIC_KEY_PATH: {{ .Values.backend.env.JWT_PUBLIC_KEY_PATH | quote }}
+  GOOGLE_REDIRECT_URL: {{ .Values.backend.env.GOOGLE_REDIRECT_URL | quote }}
+  ALLOWED_ORIGINS: {{ .Values.backend.env.ALLOWED_ORIGINS | quote }}

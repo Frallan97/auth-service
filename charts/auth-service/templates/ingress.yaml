@@ -1,0 +1,47 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "auth-service.fullname" . }}
+  labels:
+    {{- include "auth-service.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ .Values.ingress.host }}
+    secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.ingress.host }}
+    http:
+      paths:
+      # Backend API routes
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "auth-service.fullname" . }}-backend
+            port:
+              number: {{ .Values.backend.service.port }}
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "auth-service.fullname" . }}-backend
+            port:
+              number: {{ .Values.backend.service.port }}
+      # Frontend routes (catch-all)
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "auth-service.fullname" . }}-frontend
+            port:
+              number: {{ .Values.frontend.service.port }}
+{{- end }}

@@ -1,0 +1,96 @@
+backend:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/frallan97/auth-service-backend
+    tag: latest
+    pullPolicy: Always
+
+  imagePullSecrets:
+    - ghcr-pull-secret
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  env:
+    PORT: "8080"
+    ENV: production
+    JWT_ACCESS_TOKEN_EXPIRY: "15m"
+    JWT_REFRESH_TOKEN_EXPIRY: "168h"
+    JWT_PRIVATE_KEY_PATH: "/app/keys/private_key.pem"
+    JWT_PUBLIC_KEY_PATH: "/app/keys/public_key.pem"
+    GOOGLE_REDIRECT_URL: "https://auth.w.viboholic.com/api/auth/google/callback"
+    ALLOWED_ORIGINS: "https://auth.w.viboholic.com"
+
+frontend:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/frallan97/auth-service-frontend
+    tag: latest
+    pullPolicy: Always
+
+  imagePullSecrets:
+    - ghcr-pull-secret
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+database:
+  enabled: true
+
+  image:
+    repository: postgres
+    tag: "15-alpine"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 2Gi
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  env:
+    POSTGRES_DB: authdb
+    POSTGRES_USER: authuser
+
+ingress:
+  enabled: true
+  className: traefik
+  host: auth.w.viboholic.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  tls:
+    enabled: true
+    secretName: auth-service-tls
