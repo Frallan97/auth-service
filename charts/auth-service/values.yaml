@@ -28,8 +28,8 @@ backend:
     JWT_REFRESH_TOKEN_EXPIRY: "168h"
     JWT_PRIVATE_KEY_PATH: "/app/keys/private_key.pem"
     JWT_PUBLIC_KEY_PATH: "/app/keys/public_key.pem"
-    GOOGLE_REDIRECT_URL: "https://auth.w.vibeoholic.com/api/auth/google/callback"
-    ALLOWED_ORIGINS: "https://auth.w.vibeoholic.com"
+    GOOGLE_REDIRECT_URL: "https://auth.vibeoholic.com/api/auth/google/callback"
+    ALLOWED_ORIGINS: "https://auth.vibeoholic.com"
 
 frontend:
   replicaCount: 1
@@ -86,7 +86,7 @@ database:
 ingress:
   enabled: true
   className: traefik
-  host: auth.w.vibeoholic.com
+  host: auth.vibeoholic.com
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
