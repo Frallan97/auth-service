@@ -38,7 +38,7 @@ spec:
               name: {{ include "auth-service.fullname" . }}-postgres
               key: POSTGRES_PASSWORD
         - name: DATABASE_URL
-          value: "postgresql://{{ .Values.database.env.POSTGRES_USER }}:$(POSTGRES_PASSWORD)@{{ include \"auth-service.fullname\" . }}-postgres:{{ .Values.database.service.port }}/{{ .Values.database.env.POSTGRES_DB }}?sslmode=disable"
+          value: "postgresql://{{ .Values.database.env.POSTGRES_USER }}:$(POSTGRES_PASSWORD)@{{ include "auth-service.fullname" . }}-postgres:{{ .Values.database.service.port }}/{{ .Values.database.env.POSTGRES_DB }}?sslmode=disable"
         volumeMounts:
         - name: jwt-keys
           mountPath: /app/keys
