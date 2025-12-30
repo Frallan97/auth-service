@@ -26,6 +26,12 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// Run migrations BEFORE connecting
+	log.Println("Running database migrations...")
+	if err := database.RunMigrations(cfg.DatabaseURL); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	// Connect to database
 	db, err := database.Connect(cfg.DatabaseURL)
 	if err != nil {

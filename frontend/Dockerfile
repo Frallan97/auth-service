@@ -1,6 +1,9 @@
 # Build stage
 FROM oven/bun:1 AS builder
 
+# Build argument for API URL
+ARG VITE_API_URL=https://auth.vibeoholic.com
+
 WORKDIR /app
 
 # Copy package files
@@ -12,7 +15,8 @@ RUN bun install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application with environment variable
+ENV VITE_API_URL=$VITE_API_URL
 RUN bun run build
 
 # Production stage
