@@ -46,8 +46,8 @@ func RunMigrations(databaseURL string) error {
 	// Get migrations path from environment or use default
 	migrationsPath := os.Getenv("MIGRATIONS_PATH")
 	if migrationsPath == "" {
-		// Default path in container
-		migrationsPath = "file:///app/migrations"
+		// Default path in container (matches Dockerfile WORKDIR /root/)
+		migrationsPath = "file:///root/migrations"
 	}
 
 	m, err := migrate.New(migrationsPath, databaseURL)
