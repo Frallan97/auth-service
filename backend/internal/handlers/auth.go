@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/frans-sjostrom/auth-service/internal/middleware"
@@ -14,15 +15,45 @@ import (
 )
 
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	// Get redirect_uri parameter (where to send user after auth)
+	redirectURI := r.URL.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		// Default to first allowed origin if not specified
+		redirectURI = h.cfg.AllowedOrigins[0]
+	}
+
+	// Validate redirect_uri is in allowed origins
+	validRedirect := false
+	for _, origin := range h.cfg.AllowedOrigins {
+		if redirectURI == origin || strings.HasPrefix(redirectURI, origin+"/") {
+			validRedirect = true
+			break
+		}
+	}
+	if !validRedirect {
+		http.Error(w, "Invalid redirect_uri", http.StatusBadRequest)
+		return
+	}
+
 	// Generate random state
 	b := make([]byte, 16)
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
 
-	// Store state in cookie for CSRF protection
+	// Store state and redirect_uri in cookies for CSRF protection
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
+		Expires:  time.Now().Add(10 * time.Minute),
+		HttpOnly: true,
+		Secure:   h.cfg.Env == "production",
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_redirect",
+		Value:    redirectURI,
 		Expires:  time.Now().Add(10 * time.Minute),
 		HttpOnly: true,
 		Secure:   h.cfg.Env == "production",
@@ -49,9 +80,25 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clear state cookie
+	// Get redirect_uri from cookie
+	redirectCookie, err := r.Cookie("oauth_redirect")
+	if err != nil {
+		http.Error(w, "Redirect URI cookie not found", http.StatusBadRequest)
+		return
+	}
+	redirectURI := redirectCookie.Value
+
+	// Clear state and redirect cookies
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
+		Value:    "",
+		Expires:  time.Now().Add(-1 * time.Hour),
+		HttpOnly: true,
+		Path:     "/",
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_redirect",
 		Value:    "",
 		Expires:  time.Now().Add(-1 * time.Hour),
 		HttpOnly: true,
@@ -105,10 +152,9 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	// Log auth event
 	h.authService.LogAuthEvent(ctx, &user.ID, "LOGIN", r.RemoteAddr, r.UserAgent())
 
-	// Redirect to frontend with access token in URL fragment
+	// Redirect to application callback with access token
 	// Frontend should extract it and store in memory
-	frontendURL := h.cfg.AllowedOrigins[0]
-	redirectURL := frontendURL + "/auth/callback?access_token=" + tokens.AccessToken
+	redirectURL := redirectURI + "/auth/callback?access_token=" + tokens.AccessToken
 	http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 }
 
