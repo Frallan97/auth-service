@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { usersAPI, User } from '../../services/api'
+import { useAuth } from '../../contexts/AuthContext'
 
 export default function Users() {
+  const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -41,6 +43,12 @@ export default function Users() {
   }
 
   const handleDelete = async (user: User) => {
+    // Prevent self-deletion
+    if (user.id === currentUser?.id) {
+      alert('You cannot delete your own account')
+      return
+    }
+
     if (!confirm(`Are you sure you want to delete ${user.name}?`)) {
       return
     }
@@ -86,6 +94,9 @@ export default function Users() {
                 Email
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Role
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -122,6 +133,17 @@ export default function Users() {
                   <div className="text-sm text-gray-900 dark:text-white">
                     {user.email}
                   </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.role === 'admin'
+                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                    }`}
+                  >
+                    {user.role}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span

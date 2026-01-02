@@ -235,7 +235,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `
-		SELECT id, email, google_id, name, avatar_url, is_active, created_at, updated_at
+		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -246,6 +246,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		GoogleID  *string    `json:"google_id,omitempty"`
 		Name      string     `json:"name"`
 		AvatarURL *string    `json:"avatar_url,omitempty"`
+		Role      string     `json:"role"`
 		IsActive  bool       `json:"is_active"`
 		CreatedAt time.Time  `json:"created_at"`
 		UpdatedAt time.Time  `json:"updated_at"`
@@ -253,7 +254,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 	err := h.db.QueryRow(ctx, query, userID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {

@@ -15,6 +15,7 @@ const (
 	UserIDKey contextKey = "userID"
 	EmailKey  contextKey = "email"
 	NameKey   contextKey = "name"
+	RoleKey   contextKey = "role"
 )
 
 func AuthMiddleware(publicKey *rsa.PublicKey) func(http.Handler) http.Handler {
@@ -42,8 +43,42 @@ func AuthMiddleware(publicKey *rsa.PublicKey) func(http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, EmailKey, claims.Email)
 			ctx = context.WithValue(ctx, NameKey, claims.Name)
+			ctx = context.WithValue(ctx, RoleKey, claims.Role)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// AdminMiddleware ensures the authenticated user is an admin
+// Must be used after AuthMiddleware
+func AdminMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, ok := r.Context().Value(RoleKey).(string)
+			if !ok {
+				http.Error(w, "Role not found in context", http.StatusInternalServerError)
+				return
+			}
+
+			if role != "admin" {
+				http.Error(w, "Admin access required", http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// IsAdmin checks if the user is an admin
+func IsAdmin(ctx context.Context) bool {
+	role, ok := ctx.Value(RoleKey).(string)
+	return ok && role == "admin"
+}
+
+// GetRole returns the user's role from context
+func GetRole(ctx context.Context) (string, bool) {
+	role, ok := ctx.Value(RoleKey).(string)
+	return role, ok
 }

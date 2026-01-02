@@ -86,12 +86,19 @@ func main() {
 			r.Get("/auth/me", h.GetCurrentUser)
 
 			r.Route("/users", func(r chi.Router) {
-				r.Get("/", h.ListUsers)
+				// Mixed authorization - handlers check permissions
 				r.Get("/{id}", h.GetUser)
 				r.Put("/{id}", h.UpdateUser)
-				r.Delete("/{id}", h.DeleteUser)
-				r.Post("/{id}/activate", h.ActivateUser)
-				r.Post("/{id}/deactivate", h.DeactivateUser)
+
+				// Admin-only routes
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.AdminMiddleware())
+
+					r.Get("/", h.ListUsers)
+					r.Delete("/{id}", h.DeleteUser)
+					r.Post("/{id}/activate", h.ActivateUser)
+					r.Post("/{id}/deactivate", h.DeactivateUser)
+				})
 			})
 		})
 	})

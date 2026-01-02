@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/frans-sjostrom/auth-service/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -16,6 +17,7 @@ type UserResponse struct {
 	GoogleID  *string    `json:"google_id,omitempty"`
 	Name      string     `json:"name"`
 	AvatarURL *string    `json:"avatar_url,omitempty"`
+	Role      string     `json:"role"`
 	IsActive  bool       `json:"is_active"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
@@ -57,7 +59,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// Get users
 	query := `
-		SELECT id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -76,7 +78,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		var user UserResponse
 		err := rows.Scan(
 			&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-			&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
 			continue
@@ -109,7 +111,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `
-		SELECT id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -117,11 +119,20 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	var user UserResponse
 	err = h.db.QueryRow(ctx, query, userID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Authorization: users can view themselves, admins can view anyone
+	authUserID, _ := ctx.Value(middleware.UserIDKey).(uuid.UUID)
+	authUserRole, _ := ctx.Value(middleware.RoleKey).(string)
+
+	if authUserRole != "admin" && authUserID != userID {
+		http.Error(w, "Forbidden: cannot view other users", http.StatusForbidden)
 		return
 	}
 
@@ -136,6 +147,15 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := uuid.Parse(idStr)
 	if err != nil {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization: users can only update themselves, admins can update anyone
+	authUserID, _ := ctx.Value(middleware.UserIDKey).(uuid.UUID)
+	authUserRole, _ := ctx.Value(middleware.RoleKey).(string)
+
+	if authUserRole != "admin" && authUserID != userID {
+		http.Error(w, "Forbidden: cannot update other users", http.StatusForbidden)
 		return
 	}
 
@@ -155,13 +175,13 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		    avatar_url = COALESCE($2, avatar_url),
 		    updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL
-		RETURNING id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 	`
 
 	var user UserResponse
 	err = h.db.QueryRow(ctx, query, updateReq.Name, updateReq.AvatarURL, userID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err != nil {
@@ -180,6 +200,21 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := uuid.Parse(idStr)
 	if err != nil {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Authorization: only admins can delete users
+	authUserID, _ := ctx.Value(middleware.UserIDKey).(uuid.UUID)
+	authUserRole, _ := ctx.Value(middleware.RoleKey).(string)
+
+	if authUserRole != "admin" {
+		http.Error(w, "Forbidden: admin access required", http.StatusForbidden)
+		return
+	}
+
+	// Prevent self-deletion
+	if authUserID == userID {
+		http.Error(w, "Forbidden: cannot delete yourself", http.StatusForbidden)
 		return
 	}
 
@@ -221,13 +256,13 @@ func (h *Handler) ActivateUser(w http.ResponseWriter, r *http.Request) {
 		UPDATE users
 		SET is_active = true, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 	`
 
 	var user UserResponse
 	err = h.db.QueryRow(ctx, query, userID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err != nil {
@@ -253,13 +288,13 @@ func (h *Handler) DeactivateUser(w http.ResponseWriter, r *http.Request) {
 		UPDATE users
 		SET is_active = false, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 	`
 
 	var user UserResponse
 	err = h.db.QueryRow(ctx, query, userID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err != nil {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { ProtectedRoute } from './components/Auth/ProtectedRoute'
+import AdminRoute from './components/Auth/AdminRoute'
 import LoginPage from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
@@ -28,7 +29,9 @@ function App() {
               path="/admin/users"
               element={
                 <ProtectedRoute>
-                  <Users />
+                  <AdminRoute>
+                    <Users />
+                  </AdminRoute>
                 </ProtectedRoute>
               }
             />

@@ -77,28 +77,38 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 	var user models.User
 
 	query := `
-		SELECT id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE google_id = $1 AND deleted_at IS NULL
 	`
 
 	err := s.db.QueryRow(ctx, query, googleUserInfo.ID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err == pgx.ErrNoRows {
-		// Create new user
+		// Create new user - determine initial role
+		initialRole := models.RoleUser
+
+		// Check if email is in admin list
+		for _, adminEmail := range s.cfg.AdminEmails {
+			if googleUserInfo.Email == adminEmail {
+				initialRole = models.RoleAdmin
+				break
+			}
+		}
+
 		insertQuery := `
-			INSERT INTO users (email, google_id, name, avatar_url, is_active)
-			VALUES ($1, $2, $3, $4, true)
-			RETURNING id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+			INSERT INTO users (email, google_id, name, avatar_url, role, is_active)
+			VALUES ($1, $2, $3, $4, $5, true)
+			RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		`
 		err = s.db.QueryRow(ctx, insertQuery,
-			googleUserInfo.Email, googleUserInfo.ID, googleUserInfo.Name, googleUserInfo.Picture,
+			googleUserInfo.Email, googleUserInfo.ID, googleUserInfo.Name, googleUserInfo.Picture, initialRole,
 		).Scan(
 			&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-			&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create user: %w", err)
@@ -107,15 +117,25 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 		return nil, fmt.Errorf("failed to query user: %w", err)
 	} else {
 		// Update existing user
+		// Auto-upgrade to admin if in ADMIN_EMAILS config but role is still 'user'
+		if user.Role == models.RoleUser {
+			for _, adminEmail := range s.cfg.AdminEmails {
+				if user.Email == adminEmail {
+					user.Role = models.RoleAdmin
+					break
+				}
+			}
+		}
+
 		updateQuery := `
 			UPDATE users
-			SET name = $1, avatar_url = $2, updated_at = NOW()
-			WHERE id = $3
-			RETURNING id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+			SET name = $1, avatar_url = $2, role = $3, updated_at = NOW()
+			WHERE id = $4
+			RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		`
-		err = s.db.QueryRow(ctx, updateQuery, googleUserInfo.Name, googleUserInfo.Picture, user.ID).Scan(
+		err = s.db.QueryRow(ctx, updateQuery, googleUserInfo.Name, googleUserInfo.Picture, user.Role, user.ID).Scan(
 			&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-			&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update user: %w", err)
@@ -131,6 +151,7 @@ func (s *Service) GenerateTokens(ctx context.Context, user *models.User) (*model
 		user.ID,
 		user.Email,
 		user.Name,
+		user.Role,
 		s.cfg.JWTPrivateKey,
 		s.cfg.JWTAccessTokenExpiry,
 	)
@@ -207,13 +228,13 @@ func (s *Service) RefreshAccessToken(ctx context.Context, refreshToken string) (
 	// Get user
 	var user models.User
 	userQuery := `
-		SELECT id, email, google_id, name, avatar_url, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE id = $1 AND is_active = true AND deleted_at IS NULL
 	`
 	err = s.db.QueryRow(ctx, userQuery, tokenRecord.UserID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("user not found or inactive: %w", err)

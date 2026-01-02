@@ -16,15 +16,17 @@ type Claims struct {
 	UserID uuid.UUID `json:"sub"`
 	Email  string    `json:"email"`
 	Name   string    `json:"name"`
+	Role   string    `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(userID uuid.UUID, email, name string, privateKey *rsa.PrivateKey, expiry time.Duration) (string, error) {
+func GenerateAccessToken(userID uuid.UUID, email, name, role string, privateKey *rsa.PrivateKey, expiry time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID: userID,
 		Email:  email,
 		Name:   name,
+		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-service",
 			IssuedAt:  jwt.NewNumericDate(now),
