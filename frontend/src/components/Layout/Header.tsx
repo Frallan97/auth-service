@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function Header() {
@@ -8,24 +7,8 @@ export default function Header() {
     <header className="bg-white dark:bg-gray-800 shadow">
       <nav className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-8">
-            <Link to="/dashboard" className="text-xl font-bold text-gray-900 dark:text-white">
-              Auth Service
-            </Link>
-            <div className="hidden md:flex space-x-4">
-              <Link
-                to="/dashboard"
-                className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-              >
-                Dashboard
-              </Link>
-              <Link
-                to="/admin/users"
-                className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-              >
-                Users
-              </Link>
-            </div>
+          <div className="text-xl font-bold text-gray-900 dark:text-white">
+            Auth Service
           </div>
 
           {user && (
