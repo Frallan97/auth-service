@@ -29,7 +29,7 @@ backend:
     JWT_PRIVATE_KEY_PATH: "/app/keys/private_key.pem"
     JWT_PUBLIC_KEY_PATH: "/app/keys/public_key.pem"
     GOOGLE_REDIRECT_URL: "https://auth.vibeoholic.com/api/auth/google/callback"
-    ALLOWED_ORIGINS: "https://auth.vibeoholic.com"
+    ALLOWED_ORIGINS: "https://options.vibeoholic.com"
 
 frontend:
   replicaCount: 1
