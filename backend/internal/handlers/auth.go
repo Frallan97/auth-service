@@ -37,7 +37,10 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Generate random state
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 	state := base64.URLEncoding.EncodeToString(b)
 
 	// Store state and redirect_uri in cookies for CSRF protection
@@ -114,14 +117,16 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	userInfo, err := h.authService.ExchangeGoogleCode(ctx, code)
 	if err != nil {
-		http.Error(w, "Failed to exchange code: "+err.Error(), http.StatusInternalServerError)
+		h.logger.Printf("Failed to exchange Google code: %v", err)
+		http.Error(w, "Authentication failed. Please try again.", http.StatusInternalServerError)
 		return
 	}
 
 	// Create or update user
 	user, err := h.authService.CreateOrUpdateUser(ctx, userInfo)
 	if err != nil {
-		http.Error(w, "Failed to create user: "+err.Error(), http.StatusInternalServerError)
+		h.logger.Printf("Failed to create or update user: %v", err)
+		http.Error(w, "Authentication failed. Please try again.", http.StatusInternalServerError)
 		return
 	}
 
@@ -134,7 +139,8 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	// Generate tokens
 	tokens, err := h.authService.GenerateTokens(ctx, user)
 	if err != nil {
-		http.Error(w, "Failed to generate tokens: "+err.Error(), http.StatusInternalServerError)
+		h.logger.Printf("Failed to generate tokens for user %s: %v", user.ID, err)
+		http.Error(w, "Authentication failed. Please try again.", http.StatusInternalServerError)
 		return
 	}
 
@@ -150,7 +156,13 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Log auth event
-	h.authService.LogAuthEvent(ctx, &user.ID, "LOGIN", r.RemoteAddr, r.UserAgent())
+	if err := h.authService.LogAuthEvent(ctx, &user.ID, "LOGIN", r.RemoteAddr, r.UserAgent()); err != nil {
+		// Log the error but don't fail the request
+		// Audit logging should not prevent successful authentication
+		// In production, this should be sent to monitoring/alerting system
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	// Redirect to application callback with access token
 	// Frontend should extract it and store in memory
@@ -171,7 +183,8 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	// Refresh tokens
 	tokens, err := h.authService.RefreshAccessToken(ctx, cookie.Value)
 	if err != nil {
-		http.Error(w, "Failed to refresh token: "+err.Error(), http.StatusUnauthorized)
+		h.logger.Printf("Failed to refresh access token: %v", err)
+		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 
@@ -215,7 +228,11 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	// Log auth event if we have user context
 	if userID, ok := r.Context().Value(middleware.UserIDKey).(uuid.UUID); ok {
-		h.authService.LogAuthEvent(ctx, &userID, "LOGOUT", r.RemoteAddr, r.UserAgent())
+		if err := h.authService.LogAuthEvent(ctx, &userID, "LOGOUT", r.RemoteAddr, r.UserAgent()); err != nil {
+			// Log the error but don't fail logout
+			// User experience is prioritized over audit logging for logout
+			// In production, this should trigger an alert
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

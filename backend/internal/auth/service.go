@@ -188,10 +188,14 @@ func (s *Service) GenerateTokens(ctx context.Context, user *models.User) (*model
 
 func (s *Service) RefreshAccessToken(ctx context.Context, refreshToken string) (*models.TokenPair, error) {
 	// Find valid refresh token
+	// Note: We can't hash and compare directly because bcrypt generates different hashes each time
+	// Instead, we fetch recent valid tokens and compare using bcrypt
 	query := `
 		SELECT id, user_id, token_hash, expires_at
 		FROM refresh_tokens
 		WHERE revoked_at IS NULL AND expires_at > NOW()
+		ORDER BY created_at DESC
+		LIMIT 100
 	`
 
 	rows, err := s.db.Query(ctx, query)
@@ -207,7 +211,7 @@ func (s *Service) RefreshAccessToken(ctx context.Context, refreshToken string) (
 			continue
 		}
 
-		// Compare token hash
+		// Compare token hash using bcrypt
 		if err := customJWT.CompareRefreshToken(rt.TokenHash, refreshToken); err == nil {
 			tokenRecord = &rt
 			break
@@ -245,10 +249,13 @@ func (s *Service) RefreshAccessToken(ctx context.Context, refreshToken string) (
 }
 
 func (s *Service) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
+	// Find the token to revoke
 	query := `
 		SELECT id, token_hash
 		FROM refresh_tokens
 		WHERE revoked_at IS NULL AND expires_at > NOW()
+		ORDER BY created_at DESC
+		LIMIT 100
 	`
 
 	rows, err := s.db.Query(ctx, query)
@@ -280,10 +287,14 @@ func (s *Service) RevokeRefreshToken(ctx context.Context, refreshToken string) e
 	return err
 }
 
-func (s *Service) LogAuthEvent(ctx context.Context, userID *uuid.UUID, action, ipAddress, userAgent string) {
+func (s *Service) LogAuthEvent(ctx context.Context, userID *uuid.UUID, action, ipAddress, userAgent string) error {
 	query := `
 		INSERT INTO auth_audit_log (user_id, action, ip_address, user_agent)
 		VALUES ($1, $2, $3, $4)
 	`
-	s.db.Exec(ctx, query, userID, action, ipAddress, userAgent)
+	_, err := s.db.Exec(ctx, query, userID, action, ipAddress, userAgent)
+	if err != nil {
+		return fmt.Errorf("failed to log auth event: %w", err)
+	}
+	return nil
 }

@@ -81,6 +81,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
+			h.logger.Printf("Error scanning user row: %v", err)
 			continue
 		}
 		users = append(users, user)

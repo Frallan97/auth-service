@@ -73,9 +73,18 @@ func main() {
 		r.Get("/public-key", h.GetPublicKey)
 
 		r.Route("/auth", func(r chi.Router) {
+			// Apply rate limiting to auth endpoints (10 requests per minute)
+			r.Use(middleware.RateLimitMiddleware(10))
+
 			r.Get("/google/login", h.GoogleLogin)
 			r.Get("/google/callback", h.GoogleCallback)
-			r.Post("/refresh", h.RefreshToken)
+
+			// Stricter rate limiting for refresh endpoint (5 requests per minute)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RateLimitMiddleware(5))
+				r.Post("/refresh", h.RefreshToken)
+			})
+
 			r.Post("/logout", h.Logout)
 		})
 
