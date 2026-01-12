@@ -59,3 +59,13 @@ type GoogleUserInfo struct {
 	Name          string `json:"name"`
 	Picture       string `json:"picture"`
 }
+
+type AllowedOrigin struct {
+	ID          int        `json:"id" db:"id"`
+	Origin      string     `json:"origin" db:"origin"`
+	Description *string    `json:"description,omitempty" db:"description"`
+	IsActive    bool       `json:"is_active" db:"is_active"`
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	CreatedBy   *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
+}

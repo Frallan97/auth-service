@@ -6,6 +6,7 @@ import LoginPage from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Admin/Users'
+import Origins from './pages/Admin/Origins'
 import Layout from './components/Layout/Layout'
 
 function App() {
@@ -31,6 +32,16 @@ function App() {
                 <ProtectedRoute>
                   <AdminRoute>
                     <Users />
+                  </AdminRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/origins"
+              element={
+                <ProtectedRoute>
+                  <AdminRoute>
+                    <Origins />
                   </AdminRoute>
                 </ProtectedRoute>
               }

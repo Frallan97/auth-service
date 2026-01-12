@@ -69,3 +69,34 @@ func RunMigrations(databaseURL string) error {
 	log.Println("Database migrations completed successfully")
 	return nil
 }
+
+// LoadActiveOrigins loads all active allowed origins from the database
+func (db *DB) LoadActiveOrigins(ctx context.Context) ([]string, error) {
+	query := `
+		SELECT origin
+		FROM allowed_origins
+		WHERE is_active = true
+		ORDER BY origin
+	`
+
+	rows, err := db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query allowed origins: %w", err)
+	}
+	defer rows.Close()
+
+	var origins []string
+	for rows.Next() {
+		var origin string
+		if err := rows.Scan(&origin); err != nil {
+			return nil, fmt.Errorf("failed to scan origin: %w", err)
+		}
+		origins = append(origins, origin)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating origins: %w", err)
+	}
+
+	return origins, nil
+}

@@ -41,6 +41,23 @@ func main() {
 
 	log.Println("Database connected successfully")
 
+	// Load allowed origins from database
+	ctx := context.Background()
+	dbOrigins, err := db.LoadActiveOrigins(ctx)
+	if err != nil {
+		log.Printf("Warning: Failed to load origins from database: %v", err)
+		log.Println("Using origins from environment variable")
+	}
+
+	// Use database origins if available, otherwise fall back to config
+	allowedOrigins := cfg.AllowedOrigins
+	if len(dbOrigins) > 0 {
+		allowedOrigins = dbOrigins
+		log.Printf("Loaded %d allowed origins from database", len(dbOrigins))
+	} else {
+		log.Printf("Using %d allowed origins from environment", len(allowedOrigins))
+	}
+
 	// Initialize handlers
 	h := handlers.New(db, cfg)
 
@@ -53,7 +70,7 @@ func main() {
 	r.Use(chiMiddleware.RequestID)
 	r.Use(chiMiddleware.RealIP)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.AllowedOrigins,
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -108,6 +125,16 @@ func main() {
 					r.Post("/{id}/activate", h.ActivateUser)
 					r.Post("/{id}/deactivate", h.DeactivateUser)
 				})
+			})
+
+			// Admin-only allowed origins management
+			r.Route("/origins", func(r chi.Router) {
+				r.Use(middleware.AdminMiddleware())
+
+				r.Get("/", h.ListOrigins)
+				r.Post("/", h.CreateOrigin)
+				r.Put("/{id}", h.UpdateOrigin)
+				r.Delete("/{id}", h.DeleteOrigin)
 			})
 		})
 	})

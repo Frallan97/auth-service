@@ -118,3 +118,48 @@ export const usersAPI = {
     return response.data
   },
 }
+
+// Allowed Origins Types
+export interface AllowedOrigin {
+  id: number
+  origin: string
+  description?: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by?: string
+}
+
+export interface CreateOriginRequest {
+  origin: string
+  description?: string
+  is_active?: boolean
+}
+
+export interface UpdateOriginRequest {
+  origin?: string
+  description?: string
+  is_active?: boolean
+}
+
+// Allowed Origins API
+export const originsAPI = {
+  list: async (): Promise<AllowedOrigin[]> => {
+    const response = await api.get('/api/origins')
+    return response.data
+  },
+
+  create: async (data: CreateOriginRequest): Promise<AllowedOrigin> => {
+    const response = await api.post('/api/origins', data)
+    return response.data
+  },
+
+  update: async (id: number, data: UpdateOriginRequest): Promise<AllowedOrigin> => {
+    const response = await api.put(`/api/origins/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: number): Promise<void> => {
+    await api.delete(`/api/origins/${id}`)
+  },
+}
