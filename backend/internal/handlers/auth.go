@@ -15,6 +15,8 @@ import (
 )
 
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	// Get redirect_uri parameter (where to send user after auth)
 	redirectURI := r.URL.Query().Get("redirect_uri")
 	if redirectURI == "" {
@@ -22,15 +24,50 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		redirectURI = h.cfg.AllowedOrigins[0]
 	}
 
-	// Validate redirect_uri is in allowed origins
+	// Validate redirect_uri against registered applications in database
 	validRedirect := false
-	for _, origin := range h.cfg.AllowedOrigins {
+
+	// Query database for applications
+	query := `
+		SELECT origin, redirect_uris
+		FROM applications
+		WHERE is_active = true
+	`
+	rows, err := h.db.Query(ctx, query)
+	if err != nil {
+		h.logger.Printf("Failed to query applications: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var origin string
+		var redirectURIs []string
+		if err := rows.Scan(&origin, &redirectURIs); err != nil {
+			continue
+		}
+
+		// Check if redirect_uri matches the origin or any registered redirect URI
 		if redirectURI == origin || strings.HasPrefix(redirectURI, origin+"/") {
 			validRedirect = true
 			break
 		}
+
+		// Also check against explicitly registered redirect URIs
+		for _, registeredURI := range redirectURIs {
+			if redirectURI == registeredURI || strings.HasPrefix(redirectURI, registeredURI) {
+				validRedirect = true
+				break
+			}
+		}
+		if validRedirect {
+			break
+		}
 	}
+
 	if !validRedirect {
+		h.logger.Printf("Invalid redirect_uri: %s", redirectURI)
 		http.Error(w, "Invalid redirect_uri", http.StatusBadRequest)
 		return
 	}
