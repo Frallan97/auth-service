@@ -98,9 +98,9 @@ export default function Users() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">
           User Management
         </h1>
         <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -160,7 +160,8 @@ export default function Users() {
       </div>
 
       <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -259,7 +260,8 @@ export default function Users() {
               </tr>
             )))}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {totalPages > 1 && (
