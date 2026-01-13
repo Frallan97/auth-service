@@ -6,10 +6,10 @@ export default function Header() {
   const location = useLocation()
 
   const navLinks = user?.role === 'admin' ? [
-    { to: '/dashboard', label: 'Dashboard' },
     { to: '/admin/users', label: 'Users' },
     { to: '/admin/applications', label: 'Applications' },
     { to: '/admin/organizations', label: 'Organizations' },
+    { to: '/admin/analytics', label: 'Analytics' },
   ] : [
     { to: '/dashboard', label: 'Dashboard' },
   ]

@@ -10,6 +10,7 @@ import Origins from './pages/Admin/Origins'
 import Applications from './pages/Admin/Applications'
 import Organizations from './pages/Admin/Organizations'
 import OrganizationMembers from './pages/Admin/OrganizationMembers'
+import Analytics from './pages/Admin/Analytics'
 import Layout from './components/Layout/Layout'
 
 function App() {
@@ -75,6 +76,16 @@ function App() {
                 <ProtectedRoute>
                   <AdminRoute>
                     <OrganizationMembers />
+                  </AdminRoute>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/analytics"
+              element={
+                <ProtectedRoute>
+                  <AdminRoute>
+                    <Analytics />
                   </AdminRoute>
                 </ProtectedRoute>
               }

@@ -301,3 +301,277 @@ func parseInt(s string) (int, error) {
 	err := json.Unmarshal([]byte(s), &i)
 	return i, err
 }
+
+// GetLoginStats returns aggregated login statistics
+func (h *Handler) GetLoginStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only super admins can view overall stats
+	if !middleware.IsSuperAdmin(ctx) {
+		http.Error(w, "Access denied - super admin required", http.StatusForbidden)
+		return
+	}
+
+	// Get overall stats
+	var stats struct {
+		TotalLogins           int `json:"total_logins"`
+		UniqueUsers           int `json:"unique_users"`
+		UniqueApplications    int `json:"unique_applications"`
+		LoginsLast24Hours     int `json:"logins_last_24_hours"`
+		LoginsLast7Days       int `json:"logins_last_7_days"`
+		LoginsLast30Days      int `json:"logins_last_30_days"`
+	}
+
+	// Total logins
+	err := h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins`).Scan(&stats.TotalLogins)
+	if err != nil {
+		h.logger.Printf("Failed to get total logins: %v", err)
+	}
+
+	// Unique users
+	err = h.db.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM user_application_logins`).Scan(&stats.UniqueUsers)
+	if err != nil {
+		h.logger.Printf("Failed to get unique users: %v", err)
+	}
+
+	// Unique applications
+	err = h.db.QueryRow(ctx, `SELECT COUNT(DISTINCT application_id) FROM user_application_logins`).Scan(&stats.UniqueApplications)
+	if err != nil {
+		h.logger.Printf("Failed to get unique applications: %v", err)
+	}
+
+	// Logins in last 24 hours
+	err = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE created_at > NOW() - INTERVAL '24 hours'`).Scan(&stats.LoginsLast24Hours)
+	if err != nil {
+		h.logger.Printf("Failed to get logins last 24 hours: %v", err)
+	}
+
+	// Logins in last 7 days
+	err = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE created_at > NOW() - INTERVAL '7 days'`).Scan(&stats.LoginsLast7Days)
+	if err != nil {
+		h.logger.Printf("Failed to get logins last 7 days: %v", err)
+	}
+
+	// Logins in last 30 days
+	err = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE created_at > NOW() - INTERVAL '30 days'`).Scan(&stats.LoginsLast30Days)
+	if err != nil {
+		h.logger.Printf("Failed to get logins last 30 days: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// GetUserLoginStats returns aggregated login statistics by user
+func (h *Handler) GetUserLoginStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only super admins can view user stats
+	if !middleware.IsSuperAdmin(ctx) {
+		http.Error(w, "Access denied - super admin required", http.StatusForbidden)
+		return
+	}
+
+	query := `
+		SELECT
+			u.id,
+			u.email,
+			u.name,
+			COUNT(l.id) as login_count,
+			COUNT(DISTINCT l.application_id) as unique_apps,
+			MAX(l.created_at) as last_login
+		FROM users u
+		LEFT JOIN user_application_logins l ON u.id = l.user_id
+		GROUP BY u.id, u.email, u.name
+		ORDER BY login_count DESC
+		LIMIT 100
+	`
+
+	rows, err := h.db.Query(ctx, query)
+	if err != nil {
+		h.logger.Printf("Failed to query user login stats: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type UserStats struct {
+		UserID      uuid.UUID  `json:"user_id"`
+		Email       string     `json:"email"`
+		Name        string     `json:"name"`
+		LoginCount  int        `json:"login_count"`
+		UniqueApps  int        `json:"unique_apps"`
+		LastLogin   *string    `json:"last_login"`
+	}
+
+	var stats []UserStats
+	for rows.Next() {
+		var s UserStats
+		if err := rows.Scan(&s.UserID, &s.Email, &s.Name, &s.LoginCount, &s.UniqueApps, &s.LastLogin); err != nil {
+			h.logger.Printf("Failed to scan user stats: %v", err)
+			continue
+		}
+		stats = append(stats, s)
+	}
+
+	if stats == nil {
+		stats = []UserStats{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// GetApplicationLoginStats returns aggregated login statistics by application
+func (h *Handler) GetApplicationLoginStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only super admins can view application stats
+	if !middleware.IsSuperAdmin(ctx) {
+		http.Error(w, "Access denied - super admin required", http.StatusForbidden)
+		return
+	}
+
+	query := `
+		SELECT
+			a.id,
+			a.name,
+			a.slug,
+			COUNT(l.id) as login_count,
+			COUNT(DISTINCT l.user_id) as unique_users,
+			MAX(l.created_at) as last_login
+		FROM applications a
+		LEFT JOIN user_application_logins l ON a.id = l.application_id
+		WHERE a.is_active = true
+		GROUP BY a.id, a.name, a.slug
+		ORDER BY login_count DESC
+	`
+
+	rows, err := h.db.Query(ctx, query)
+	if err != nil {
+		h.logger.Printf("Failed to query application login stats: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type AppStats struct {
+		AppID       uuid.UUID  `json:"app_id"`
+		Name        string     `json:"name"`
+		Slug        string     `json:"slug"`
+		LoginCount  int        `json:"login_count"`
+		UniqueUsers int        `json:"unique_users"`
+		LastLogin   *string    `json:"last_login"`
+	}
+
+	var stats []AppStats
+	for rows.Next() {
+		var s AppStats
+		if err := rows.Scan(&s.AppID, &s.Name, &s.Slug, &s.LoginCount, &s.UniqueUsers, &s.LastLogin); err != nil {
+			h.logger.Printf("Failed to scan app stats: %v", err)
+			continue
+		}
+		stats = append(stats, s)
+	}
+
+	if stats == nil {
+		stats = []AppStats{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// GetMyLoginStats returns login statistics for the current user
+func (h *Handler) GetMyLoginStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(middleware.UserIDKey).(uuid.UUID)
+
+	// Get user's personal stats
+	var stats struct {
+		TotalLogins        int `json:"total_logins"`
+		UniqueApplications int `json:"unique_applications"`
+		LoginsLast7Days    int `json:"logins_last_7_days"`
+		LoginsLast30Days   int `json:"logins_last_30_days"`
+	}
+
+	// Total logins
+	err := h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE user_id = $1`, userID).Scan(&stats.TotalLogins)
+	if err != nil {
+		h.logger.Printf("Failed to get total logins: %v", err)
+	}
+
+	// Unique applications
+	err = h.db.QueryRow(ctx, `SELECT COUNT(DISTINCT application_id) FROM user_application_logins WHERE user_id = $1`, userID).Scan(&stats.UniqueApplications)
+	if err != nil {
+		h.logger.Printf("Failed to get unique applications: %v", err)
+	}
+
+	// Logins in last 7 days
+	err = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days'`, userID).Scan(&stats.LoginsLast7Days)
+	if err != nil {
+		h.logger.Printf("Failed to get logins last 7 days: %v", err)
+	}
+
+	// Logins in last 30 days
+	err = h.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_application_logins WHERE user_id = $1 AND created_at > NOW() - INTERVAL '30 days'`, userID).Scan(&stats.LoginsLast30Days)
+	if err != nil {
+		h.logger.Printf("Failed to get logins last 30 days: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// GetMyLoginsByApp returns the current user's login count by application
+func (h *Handler) GetMyLoginsByApp(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := ctx.Value(middleware.UserIDKey).(uuid.UUID)
+
+	query := `
+		SELECT
+			a.id,
+			a.name,
+			a.slug,
+			COUNT(l.id) as login_count,
+			MAX(l.created_at) as last_login
+		FROM applications a
+		JOIN user_application_logins l ON a.id = l.application_id
+		WHERE l.user_id = $1
+		GROUP BY a.id, a.name, a.slug
+		ORDER BY login_count DESC
+	`
+
+	rows, err := h.db.Query(ctx, query, userID)
+	if err != nil {
+		h.logger.Printf("Failed to query user app login stats: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type AppLoginStats struct {
+		AppID      uuid.UUID `json:"app_id"`
+		Name       string    `json:"name"`
+		Slug       string    `json:"slug"`
+		LoginCount int       `json:"login_count"`
+		LastLogin  string    `json:"last_login"`
+	}
+
+	var stats []AppLoginStats
+	for rows.Next() {
+		var s AppLoginStats
+		if err := rows.Scan(&s.AppID, &s.Name, &s.Slug, &s.LoginCount, &s.LastLogin); err != nil {
+			h.logger.Printf("Failed to scan app login stats: %v", err)
+			continue
+		}
+		stats = append(stats, s)
+	}
+
+	if stats == nil {
+		stats = []AppLoginStats{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}

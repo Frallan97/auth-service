@@ -320,3 +320,76 @@ export const trackingAPI = {
     await api.post('/api/track-login', data)
   },
 }
+
+// Statistics Types
+export interface LoginStats {
+  total_logins: number
+  unique_users: number
+  unique_applications: number
+  logins_last_24_hours: number
+  logins_last_7_days: number
+  logins_last_30_days: number
+}
+
+export interface UserLoginStats {
+  user_id: string
+  email: string
+  name: string
+  login_count: number
+  unique_apps: number
+  last_login: string | null
+}
+
+export interface AppLoginStats {
+  app_id: string
+  name: string
+  slug: string
+  login_count: number
+  unique_users: number
+  last_login: string | null
+}
+
+export interface MyLoginStats {
+  total_logins: number
+  unique_applications: number
+  logins_last_7_days: number
+  logins_last_30_days: number
+}
+
+export interface MyAppLoginStats {
+  app_id: string
+  name: string
+  slug: string
+  login_count: number
+  last_login: string
+}
+
+// Statistics API
+export const statsAPI = {
+  // Admin stats
+  getOverallStats: async (): Promise<LoginStats> => {
+    const response = await api.get('/api/stats/logins')
+    return response.data
+  },
+
+  getUserStats: async (): Promise<UserLoginStats[]> => {
+    const response = await api.get('/api/stats/users')
+    return response.data
+  },
+
+  getApplicationStats: async (): Promise<AppLoginStats[]> => {
+    const response = await api.get('/api/stats/applications')
+    return response.data
+  },
+
+  // Personal stats
+  getMyStats: async (): Promise<MyLoginStats> => {
+    const response = await api.get('/api/me/stats')
+    return response.data
+  },
+
+  getMyLoginsByApp: async (): Promise<MyAppLoginStats[]> => {
+    const response = await api.get('/api/me/logins-by-app')
+    return response.data
+  },
+}

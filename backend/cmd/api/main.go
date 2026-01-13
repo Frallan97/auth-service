@@ -160,6 +160,15 @@ func main() {
 
 			// Login tracking
 			r.Post("/track-login", h.TrackLogin)
+
+			// Login statistics (admin only)
+			r.Get("/stats/logins", h.GetLoginStats)
+			r.Get("/stats/users", h.GetUserLoginStats)
+			r.Get("/stats/applications", h.GetApplicationLoginStats)
+
+			// Personal login statistics (authenticated users)
+			r.Get("/me/stats", h.GetMyLoginStats)
+			r.Get("/me/logins-by-app", h.GetMyLoginsByApp)
 		})
 	})
 
