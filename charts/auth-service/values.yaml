@@ -1,3 +1,29 @@
+# ArgoCD Image Updater Configuration
+# These annotations should be added to the ArgoCD Application resource
+# to enable automatic image updates without modifying this file
+argocd:
+  imageUpdater:
+    enabled: true
+    annotations:
+      # Image list to track (both backend and frontend)
+      argocd-image-updater.argoproj.io/image-list: backend=ghcr.io/frallan97/auth-service-backend,frontend=ghcr.io/frallan97/auth-service-frontend
+      # Update strategy: latest tag
+      argocd-image-updater.argoproj.io/backend.update-strategy: latest
+      argocd-image-updater.argoproj.io/frontend.update-strategy: latest
+      # Force update even if tag is latest
+      argocd-image-updater.argoproj.io/backend.force-update: "true"
+      argocd-image-updater.argoproj.io/frontend.force-update: "true"
+      # Helm parameter paths to update
+      argocd-image-updater.argoproj.io/backend.helm.image-name: backend.image.repository
+      argocd-image-updater.argoproj.io/backend.helm.image-tag: backend.image.tag
+      argocd-image-updater.argoproj.io/frontend.helm.image-name: frontend.image.repository
+      argocd-image-updater.argoproj.io/frontend.helm.image-tag: frontend.image.tag
+      # Pull secrets for private registry
+      argocd-image-updater.argoproj.io/backend.pull-secret: pullsecret:auth-service/ghcr-pull-secret
+      argocd-image-updater.argoproj.io/frontend.pull-secret: pullsecret:auth-service/ghcr-pull-secret
+      # Write method: update Application spec directly (no git commits)
+      argocd-image-updater.argoproj.io/write-back-method: argocd
+
 backend:
   replicaCount: 1
 
