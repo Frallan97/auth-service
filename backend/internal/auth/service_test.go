@@ -387,3 +387,170 @@ func TestRoleUpgrade(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.RoleAdmin, user2.Role)
 }
+
+func TestSuperAdminFlag(t *testing.T) {
+	service, _, cleanup := setupTestService(t)
+	if service == nil {
+		return
+	}
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create admin user
+	adminUserInfo := &models.GoogleUserInfo{
+		ID:      "google-superadmin-test",
+		Email:   "admin@test.com",
+		Name:    "Super Admin",
+		Picture: "https://example.com/admin.jpg",
+	}
+
+	adminUser, err := service.CreateOrUpdateUser(ctx, adminUserInfo)
+	require.NoError(t, err)
+	assert.True(t, adminUser.IsSuperAdmin, "Admin user should have is_super_admin flag set")
+	assert.Equal(t, models.RoleAdmin, adminUser.Role)
+
+	// Create regular user
+	userInfo := &models.GoogleUserInfo{
+		ID:      "google-regular-test",
+		Email:   "user@example.com",
+		Name:    "Regular User",
+		Picture: "https://example.com/user.jpg",
+	}
+
+	regularUser, err := service.CreateOrUpdateUser(ctx, userInfo)
+	require.NoError(t, err)
+	assert.False(t, regularUser.IsSuperAdmin, "Regular user should not have is_super_admin flag")
+	assert.Equal(t, models.RoleUser, regularUser.Role)
+}
+
+func TestGetUserOrganizations(t *testing.T) {
+	service, _, cleanup := setupTestService(t)
+	if service == nil {
+		return
+	}
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a test user
+	googleUserInfo := &models.GoogleUserInfo{
+		ID:      "google-orgs-test",
+		Email:   "orgs@example.com",
+		Name:    "Org Test User",
+		Picture: "https://example.com/orgs.jpg",
+	}
+	user, err := service.CreateOrUpdateUser(ctx, googleUserInfo)
+	require.NoError(t, err)
+
+	// Create test organizations
+	org1ID := uuid.New()
+	org2ID := uuid.New()
+	org3ID := uuid.New()
+
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug, is_active, created_by)
+		VALUES ($1, 'Test Org 1', 'test-org-1', true, $2),
+		       ($3, 'Test Org 2', 'test-org-2', true, $2),
+		       ($4, 'Test Org 3', 'test-org-3', false, $2)
+	`, org1ID, user.ID, org2ID, org3ID)
+	require.NoError(t, err)
+
+	// Add user to organizations with different roles
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO user_organizations (user_id, organization_id, role)
+		VALUES ($1, $2, 'owner'),
+		       ($1, $3, 'member'),
+		       ($1, $4, 'admin')
+	`, user.ID, org1ID, org2ID, org3ID)
+	require.NoError(t, err)
+
+	// Get user organizations
+	orgs, err := service.GetUserOrganizations(ctx, user.ID)
+	require.NoError(t, err)
+
+	// Should only return active organizations (org3 is inactive)
+	assert.Len(t, orgs, 2, "Should return 2 active organizations")
+
+	// Verify organization data
+	assert.Equal(t, org1ID, orgs[0].ID)
+	assert.Equal(t, "test-org-1", orgs[0].Slug)
+	assert.Equal(t, "Test Org 1", orgs[0].Name)
+	assert.Equal(t, "owner", orgs[0].Role)
+
+	assert.Equal(t, org2ID, orgs[1].ID)
+	assert.Equal(t, "test-org-2", orgs[1].Slug)
+	assert.Equal(t, "Test Org 2", orgs[1].Name)
+	assert.Equal(t, "member", orgs[1].Role)
+}
+
+func TestGetUserOrganizations_NoOrganizations(t *testing.T) {
+	service, _, cleanup := setupTestService(t)
+	if service == nil {
+		return
+	}
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a test user
+	googleUserInfo := &models.GoogleUserInfo{
+		ID:      "google-no-orgs-test",
+		Email:   "noorgs@example.com",
+		Name:    "No Orgs User",
+		Picture: "https://example.com/noorgs.jpg",
+	}
+	user, err := service.CreateOrUpdateUser(ctx, googleUserInfo)
+	require.NoError(t, err)
+
+	// Get user organizations - should return empty slice
+	orgs, err := service.GetUserOrganizations(ctx, user.ID)
+	require.NoError(t, err)
+	assert.Empty(t, orgs, "Should return empty slice when user has no organizations")
+	assert.NotNil(t, orgs, "Should return initialized slice, not nil")
+}
+
+func TestGenerateTokens_WithOrganizations(t *testing.T) {
+	service, _, cleanup := setupTestService(t)
+	if service == nil {
+		return
+	}
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a test user
+	googleUserInfo := &models.GoogleUserInfo{
+		ID:      "google-token-orgs-test",
+		Email:   "tokenorgs@example.com",
+		Name:    "Token Orgs User",
+		Picture: "https://example.com/tokenorgs.jpg",
+	}
+	user, err := service.CreateOrUpdateUser(ctx, googleUserInfo)
+	require.NoError(t, err)
+
+	// Create test organization
+	orgID := uuid.New()
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO organizations (id, name, slug, is_active, created_by)
+		VALUES ($1, 'Token Test Org', 'token-test-org', true, $2)
+	`, orgID, user.ID)
+	require.NoError(t, err)
+
+	// Add user to organization
+	_, err = service.db.Exec(ctx, `
+		INSERT INTO user_organizations (user_id, organization_id, role)
+		VALUES ($1, $2, 'owner')
+	`, user.ID, orgID)
+	require.NoError(t, err)
+
+	// Generate tokens
+	tokens, err := service.GenerateTokens(ctx, user)
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokens.AccessToken)
+	assert.NotEmpty(t, tokens.RefreshToken)
+
+	// Note: To fully verify JWT contains organization data, we would need to
+	// parse and validate the JWT token here. This is covered by JWT package tests.
+	// This test mainly ensures GenerateTokens doesn't fail when organizations exist.
+}

@@ -77,14 +77,14 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 	var user models.User
 
 	query := `
-		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_super_admin, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE google_id = $1 AND deleted_at IS NULL
 	`
 
 	err := s.db.QueryRow(ctx, query, googleUserInfo.ID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsSuperAdmin, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 
 	if err == pgx.ErrNoRows {
@@ -99,16 +99,19 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 			}
 		}
 
+		// Set is_super_admin if this is an admin user
+		isSuperAdmin := initialRole == models.RoleAdmin
+
 		insertQuery := `
-			INSERT INTO users (email, google_id, name, avatar_url, role, is_active)
-			VALUES ($1, $2, $3, $4, $5, true)
-			RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
+			INSERT INTO users (email, google_id, name, avatar_url, role, is_super_admin, is_active)
+			VALUES ($1, $2, $3, $4, $5, $6, true)
+			RETURNING id, email, google_id, name, avatar_url, role, is_super_admin, is_active, created_at, updated_at, deleted_at
 		`
 		err = s.db.QueryRow(ctx, insertQuery,
-			googleUserInfo.Email, googleUserInfo.ID, googleUserInfo.Name, googleUserInfo.Picture, initialRole,
+			googleUserInfo.Email, googleUserInfo.ID, googleUserInfo.Name, googleUserInfo.Picture, initialRole, isSuperAdmin,
 		).Scan(
 			&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+			&user.Role, &user.IsSuperAdmin, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create user: %w", err)
@@ -122,6 +125,7 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 			for _, adminEmail := range s.cfg.AdminEmails {
 				if user.Email == adminEmail {
 					user.Role = models.RoleAdmin
+					user.IsSuperAdmin = true
 					break
 				}
 			}
@@ -129,13 +133,13 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 
 		updateQuery := `
 			UPDATE users
-			SET name = $1, avatar_url = $2, role = $3, updated_at = NOW()
-			WHERE id = $4
-			RETURNING id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
+			SET name = $1, avatar_url = $2, role = $3, is_super_admin = $4, updated_at = NOW()
+			WHERE id = $5
+			RETURNING id, email, google_id, name, avatar_url, role, is_super_admin, is_active, created_at, updated_at, deleted_at
 		`
-		err = s.db.QueryRow(ctx, updateQuery, googleUserInfo.Name, googleUserInfo.Picture, user.Role, user.ID).Scan(
+		err = s.db.QueryRow(ctx, updateQuery, googleUserInfo.Name, googleUserInfo.Picture, user.Role, user.IsSuperAdmin, user.ID).Scan(
 			&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-			&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+			&user.Role, &user.IsSuperAdmin, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update user: %w", err)
@@ -145,13 +149,61 @@ func (s *Service) CreateOrUpdateUser(ctx context.Context, googleUserInfo *models
 	return &user, nil
 }
 
+// GetUserOrganizations fetches all organizations a user belongs to
+func (s *Service) GetUserOrganizations(ctx context.Context, userID uuid.UUID) ([]customJWT.OrganizationClaim, error) {
+	query := `
+		SELECT o.id, o.slug, o.name, uo.role
+		FROM user_organizations uo
+		JOIN organizations o ON o.id = uo.organization_id
+		WHERE uo.user_id = $1 AND o.is_active = true
+		ORDER BY o.name
+	`
+
+	rows, err := s.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var organizations []customJWT.OrganizationClaim
+	for rows.Next() {
+		var org customJWT.OrganizationClaim
+		if err := rows.Scan(&org.ID, &org.Slug, &org.Name, &org.Role); err != nil {
+			return nil, fmt.Errorf("failed to scan organization: %w", err)
+		}
+		organizations = append(organizations, org)
+	}
+
+	if organizations == nil {
+		organizations = []customJWT.OrganizationClaim{}
+	}
+
+	return organizations, nil
+}
+
 func (s *Service) GenerateTokens(ctx context.Context, user *models.User) (*models.TokenPair, error) {
+	// Fetch user's organizations
+	organizations, err := s.GetUserOrganizations(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user organizations: %w", err)
+	}
+
+	// Set current org ID to nil by default (user can switch later)
+	var currentOrgID *uuid.UUID = nil
+	if len(organizations) > 0 {
+		// Default to first organization if user has any
+		currentOrgID = &organizations[0].ID
+	}
+
 	// Generate access token
 	accessToken, err := customJWT.GenerateAccessToken(
 		user.ID,
 		user.Email,
 		user.Name,
 		user.Role,
+		user.IsSuperAdmin,
+		organizations,
+		currentOrgID,
 		s.cfg.JWTPrivateKey,
 		s.cfg.JWTAccessTokenExpiry,
 	)
@@ -232,13 +284,13 @@ func (s *Service) RefreshAccessToken(ctx context.Context, refreshToken string) (
 	// Get user
 	var user models.User
 	userQuery := `
-		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
+		SELECT id, email, google_id, name, avatar_url, role, is_super_admin, is_active, created_at, updated_at, deleted_at
 		FROM users
 		WHERE id = $1 AND is_active = true AND deleted_at IS NULL
 	`
 	err = s.db.QueryRow(ctx, userQuery, tokenRecord.UserID).Scan(
 		&user.ID, &user.Email, &user.GoogleID, &user.Name, &user.AvatarURL,
-		&user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
+		&user.Role, &user.IsSuperAdmin, &user.IsActive, &user.CreatedAt, &user.UpdatedAt, &user.DeletedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("user not found or inactive: %w", err)

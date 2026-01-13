@@ -12,21 +12,35 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// OrganizationClaim represents organization membership in JWT token
+type OrganizationClaim struct {
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
+	Role string    `json:"role"` // owner, admin, member, viewer
+}
+
 type Claims struct {
-	UserID uuid.UUID `json:"sub"`
-	Email  string    `json:"email"`
-	Name   string    `json:"name"`
-	Role   string    `json:"role"`
+	UserID        uuid.UUID            `json:"sub"`
+	Email         string               `json:"email"`
+	Name          string               `json:"name"`
+	Role          string               `json:"role"`           // Global role: admin/user
+	IsSuperAdmin  bool                 `json:"is_super_admin"` // Super admin flag
+	Organizations []OrganizationClaim  `json:"organizations"`  // All orgs user belongs to
+	CurrentOrgID  *uuid.UUID           `json:"current_org_id"` // Active organization context
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(userID uuid.UUID, email, name, role string, privateKey *rsa.PrivateKey, expiry time.Duration) (string, error) {
+func GenerateAccessToken(userID uuid.UUID, email, name, role string, isSuperAdmin bool, organizations []OrganizationClaim, currentOrgID *uuid.UUID, privateKey *rsa.PrivateKey, expiry time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
-		Name:   name,
-		Role:   role,
+		UserID:        userID,
+		Email:         email,
+		Name:          name,
+		Role:          role,
+		IsSuperAdmin:  isSuperAdmin,
+		Organizations: organizations,
+		CurrentOrgID:  currentOrgID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "auth-service",
 			IssuedAt:  jwt.NewNumericDate(now),

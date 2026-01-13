@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: authuser
       POSTGRES_PASSWORD: authpass
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,17 +24,17 @@ services:
       dockerfile: Dockerfile
     container_name: auth-backend
     ports:
-      - "8080:8080"
+      - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      PORT: 8080
+      PORT: 8081
       ENV: development
       DATABASE_URL: postgresql://authuser:authpass@postgres:5432/authdb?sslmode=disable
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_REDIRECT_URL: http://localhost:8080/api/auth/google/callback
+      GOOGLE_REDIRECT_URL: http://localhost:8081/api/auth/google/callback
       JWT_PRIVATE_KEY_PATH: /app/keys/private_key.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
       JWT_ACCESS_TOKEN_EXPIRY: 15m
@@ -55,7 +55,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_URL: http://localhost:8080
+      VITE_API_URL: http://localhost:8081
     restart: unless-stopped
 
 volumes:

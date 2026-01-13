@@ -71,10 +71,11 @@ func RunMigrations(databaseURL string) error {
 }
 
 // LoadActiveOrigins loads all active allowed origins from the database
+// Updated to use applications table instead of allowed_origins
 func (db *DB) LoadActiveOrigins(ctx context.Context) ([]string, error) {
 	query := `
 		SELECT origin
-		FROM allowed_origins
+		FROM applications
 		WHERE is_active = true
 		ORDER BY origin
 	`

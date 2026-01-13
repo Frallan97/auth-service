@@ -50,9 +50,17 @@ export interface User {
   name: string
   avatar_url?: string
   role: string
+  is_super_admin: boolean
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export interface OrganizationClaim {
+  id: string
+  slug: string
+  name: string
+  role: string
 }
 
 export interface ListUsersResponse {
@@ -119,10 +127,85 @@ export const usersAPI = {
   },
 }
 
-// Allowed Origins Types
-export interface AllowedOrigin {
-  id: number
+// Application Types (replaces AllowedOrigin)
+export interface Application {
+  id: string
+  name: string
+  slug: string
   origin: string
+  description?: string
+  redirect_uris?: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by?: string
+}
+
+export interface CreateApplicationRequest {
+  name: string
+  slug?: string
+  origin: string
+  description?: string
+  redirect_uris?: string[]
+  is_active?: boolean
+}
+
+export interface UpdateApplicationRequest {
+  name?: string
+  slug?: string
+  origin?: string
+  description?: string
+  redirect_uris?: string[]
+  is_active?: boolean
+}
+
+// Applications API (replaces originsAPI)
+export const applicationsAPI = {
+  list: async (): Promise<Application[]> => {
+    const response = await api.get('/api/applications')
+    return response.data
+  },
+
+  get: async (id: string): Promise<Application> => {
+    const response = await api.get(`/api/applications/${id}`)
+    return response.data
+  },
+
+  create: async (data: CreateApplicationRequest): Promise<Application> => {
+    const response = await api.post('/api/applications', data)
+    return response.data
+  },
+
+  update: async (id: string, data: UpdateApplicationRequest): Promise<Application> => {
+    const response = await api.put(`/api/applications/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/api/applications/${id}`)
+  },
+
+  reloadCORS: async (): Promise<void> => {
+    await api.post('/api/applications/reload-cors')
+  },
+
+  getLogins: async (id: string): Promise<any[]> => {
+    const response = await api.get(`/api/applications/${id}/logins`)
+    return response.data
+  },
+}
+
+// Backward compatibility aliases
+export const originsAPI = applicationsAPI
+export type AllowedOrigin = Application
+export type CreateOriginRequest = CreateApplicationRequest
+export type UpdateOriginRequest = UpdateApplicationRequest
+
+// Organization Types
+export interface Organization {
+  id: string
+  name: string
+  slug: string
   description?: string
   is_active: boolean
   created_at: string
@@ -130,36 +213,110 @@ export interface AllowedOrigin {
   created_by?: string
 }
 
-export interface CreateOriginRequest {
-  origin: string
+export interface CreateOrganizationRequest {
+  name: string
+  slug?: string
   description?: string
   is_active?: boolean
 }
 
-export interface UpdateOriginRequest {
-  origin?: string
+export interface UpdateOrganizationRequest {
+  name?: string
+  slug?: string
   description?: string
   is_active?: boolean
 }
 
-// Allowed Origins API
-export const originsAPI = {
-  list: async (): Promise<AllowedOrigin[]> => {
-    const response = await api.get('/api/origins')
+export interface OrganizationMember {
+  id: string
+  user_id: string
+  organization_id: string
+  role: string
+  email: string
+  name: string
+  avatar_url?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AddMemberRequest {
+  user_id?: string
+  email?: string
+  role: string
+}
+
+export interface UpdateMemberRequest {
+  role: string
+}
+
+// Organizations API
+export const organizationsAPI = {
+  list: async (): Promise<Organization[]> => {
+    const response = await api.get('/api/organizations')
     return response.data
   },
 
-  create: async (data: CreateOriginRequest): Promise<AllowedOrigin> => {
-    const response = await api.post('/api/origins', data)
+  get: async (id: string): Promise<Organization> => {
+    const response = await api.get(`/api/organizations/${id}`)
     return response.data
   },
 
-  update: async (id: number, data: UpdateOriginRequest): Promise<AllowedOrigin> => {
-    const response = await api.put(`/api/origins/${id}`, data)
+  create: async (data: CreateOrganizationRequest): Promise<Organization> => {
+    const response = await api.post('/api/organizations', data)
     return response.data
   },
 
-  delete: async (id: number): Promise<void> => {
-    await api.delete(`/api/origins/${id}`)
+  update: async (id: string, data: UpdateOrganizationRequest): Promise<Organization> => {
+    const response = await api.put(`/api/organizations/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/api/organizations/${id}`)
+  },
+
+  // Members
+  listMembers: async (id: string): Promise<OrganizationMember[]> => {
+    const response = await api.get(`/api/organizations/${id}/members`)
+    return response.data
+  },
+
+  addMember: async (id: string, data: AddMemberRequest): Promise<OrganizationMember> => {
+    const response = await api.post(`/api/organizations/${id}/members`, data)
+    return response.data
+  },
+
+  updateMember: async (id: string, userId: string, data: UpdateMemberRequest): Promise<OrganizationMember> => {
+    const response = await api.put(`/api/organizations/${id}/members/${userId}`, data)
+    return response.data
+  },
+
+  removeMember: async (id: string, userId: string): Promise<void> => {
+    await api.delete(`/api/organizations/${id}/members/${userId}`)
+  },
+
+  getLogins: async (id: string): Promise<any[]> => {
+    const response = await api.get(`/api/organizations/${id}/logins`)
+    return response.data
+  },
+}
+
+// User Organizations
+export const userOrganizationsAPI = {
+  getUserOrganizations: async (userId: string): Promise<any[]> => {
+    const response = await api.get(`/api/users/${userId}/organizations`)
+    return response.data
+  },
+
+  getUserLogins: async (userId: string): Promise<any[]> => {
+    const response = await api.get(`/api/users/${userId}/logins`)
+    return response.data
+  },
+}
+
+// Login Tracking
+export const trackingAPI = {
+  trackLogin: async (data: { application_slug?: string; application_id?: string; organization_id?: string }): Promise<void> => {
+    await api.post('/api/track-login', data)
   },
 }

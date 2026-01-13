@@ -8,7 +8,8 @@ export default function Header() {
   const navLinks = user?.role === 'admin' ? [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/admin/users', label: 'Users' },
-    { to: '/admin/origins', label: 'CORS Origins' },
+    { to: '/admin/applications', label: 'Applications' },
+    { to: '/admin/organizations', label: 'Organizations' },
   ] : [
     { to: '/dashboard', label: 'Dashboard' },
   ]

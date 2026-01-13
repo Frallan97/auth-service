@@ -16,7 +16,6 @@ import (
 	"github.com/frans-sjostrom/auth-service/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 )
 
 func main() {
@@ -41,25 +40,14 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	// Load allowed origins from database
-	ctx := context.Background()
-	dbOrigins, err := db.LoadActiveOrigins(ctx)
-	if err != nil {
-		log.Printf("Warning: Failed to load origins from database: %v", err)
-		log.Println("Using origins from environment variable")
-	}
+	// Initialize dynamic CORS middleware
+	logger := log.New(os.Stdout, "[CORS] ", log.LstdFlags)
+	dynamicCORS := middleware.NewDynamicCORS(db, logger)
+	defer dynamicCORS.Stop()
 
-	// Use database origins if available, otherwise fall back to config
-	allowedOrigins := cfg.AllowedOrigins
-	if len(dbOrigins) > 0 {
-		allowedOrigins = dbOrigins
-		log.Printf("Loaded %d allowed origins from database", len(dbOrigins))
-	} else {
-		log.Printf("Using %d allowed origins from environment", len(allowedOrigins))
-	}
-
-	// Initialize handlers
+	// Initialize handlers with CORS middleware reference
 	h := handlers.New(db, cfg)
+	h.SetCORSMiddleware(dynamicCORS)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -69,14 +57,7 @@ func main() {
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(chiMiddleware.RequestID)
 	r.Use(chiMiddleware.RealIP)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   allowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	r.Use(dynamicCORS.Middleware)
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +108,7 @@ func main() {
 				})
 			})
 
-			// Admin-only allowed origins management
+			// Admin-only allowed origins management (backward compatibility)
 			r.Route("/origins", func(r chi.Router) {
 				r.Use(middleware.AdminMiddleware())
 
@@ -136,6 +117,49 @@ func main() {
 				r.Put("/{id}", h.UpdateOrigin)
 				r.Delete("/{id}", h.DeleteOrigin)
 			})
+
+			// Admin-only applications management
+			r.Route("/applications", func(r chi.Router) {
+				r.Use(middleware.AdminMiddleware())
+
+				r.Get("/", h.ListApplications)
+				r.Post("/", h.CreateApplication)
+				r.Get("/{id}", h.GetApplication)
+				r.Put("/{id}", h.UpdateApplication)
+				r.Delete("/{id}", h.DeleteApplication)
+				r.Post("/reload-cors", h.ReloadCORS)
+				r.Get("/{id}/logins", h.GetApplicationLoginHistory)
+			})
+
+			// Organization management
+			r.Route("/organizations", func(r chi.Router) {
+				// List and create require authentication
+				r.Get("/", h.ListOrganizations)
+				r.Post("/", h.CreateOrganization)
+
+				// Individual organization operations
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetOrganization)
+					r.Put("/", h.UpdateOrganization)
+					r.Delete("/", h.DeleteOrganization)
+
+					// Member management
+					r.Get("/members", h.ListOrganizationMembers)
+					r.Post("/members", h.AddOrganizationMember)
+					r.Put("/members/{userId}", h.UpdateOrganizationMember)
+					r.Delete("/members/{userId}", h.RemoveOrganizationMember)
+
+					// Organization login history
+					r.Get("/logins", h.GetOrganizationLoginHistory)
+				})
+			})
+
+			// User endpoints
+			r.Get("/users/{id}/organizations", h.GetUserOrganizations)
+			r.Get("/users/{id}/logins", h.GetUserLoginHistory)
+
+			// Login tracking
+			r.Post("/track-login", h.TrackLogin)
 		})
 	})
 
