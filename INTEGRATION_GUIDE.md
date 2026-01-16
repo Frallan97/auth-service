@@ -34,6 +34,29 @@ User Browser → Your Frontend → Your Backend → Protected Resources
 - **JWT Tokens**: Signed with RS256 using auth-service's private key
 - **Public Key**: Your backend fetches auth-service's public key to validate tokens
 - **Claims**: Tokens include `sub` (user_id), `email`, and `name`
+- **Automatic Login Tracking**: The auth-service automatically tracks logins during OAuth callback - no manual tracking required
+
+### Login Statistics Tracking
+
+The auth-service **automatically tracks all logins** during the OAuth authentication flow. When a user completes Google OAuth and is redirected back to your application, the auth-service:
+
+1. Identifies which application the user is logging into (via the redirect_uri)
+2. Records the login event in the database
+3. Captures metadata like IP address and user agent
+4. Makes this data available through analytics endpoints
+
+**No action required from your application** - login tracking happens automatically during authentication. The following statistics are available:
+
+- Total logins per user
+- Total logins per application
+- Login history with timestamps
+- Unique users per application
+- Login trends over time
+
+Access statistics through:
+- Admin dashboard: `https://auth.vibeoholic.com/admin/analytics`
+- API endpoints: `/api/stats/*` (for super admins)
+- Personal stats: `/api/me/stats` (for individual users)
 
 ---
 

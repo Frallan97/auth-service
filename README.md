@@ -17,6 +17,8 @@ A centralized authentication and authorization service providing Google OAuth au
 - Admin dashboard
 - Automatic token refresh
 - Audit logging
+- **Automatic login tracking** - Records all logins with metadata (IP, user agent, timestamp)
+- **Login statistics and analytics** - Track usage per user and application
 - RESTful API
 - Ready for Casbin integration in other services
 
@@ -147,6 +149,24 @@ bun run build
 - `DELETE /api/users/:id` - Delete user
 - `POST /api/users/:id/activate` - Activate user
 - `POST /api/users/:id/deactivate` - Deactivate user
+
+### Login Tracking & Statistics Endpoints
+
+**Note:** Login tracking happens **automatically** during OAuth callback - no manual tracking required!
+
+**Personal Stats (Authenticated Users):**
+- `GET /api/me/stats` - Get personal login statistics
+- `GET /api/me/logins-by-app` - Get personal login breakdown by application
+
+**Admin Stats (Super Admin Only):**
+- `GET /api/stats/logins` - Overall login statistics
+- `GET /api/stats/users` - Login statistics by user
+- `GET /api/stats/applications` - Login statistics by application
+- `GET /api/users/:id/logins` - Login history for specific user
+- `GET /api/applications/:id/logins` - Login history for specific application
+
+**Legacy Endpoint (Optional):**
+- `POST /api/track-login` - Manual login tracking (rarely needed, use for special cases like API keys)
 
 ## Integration with Other Services
 

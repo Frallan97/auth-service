@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
@@ -201,6 +202,21 @@ func (h *Handler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Automatically track application login by looking up application from redirect_uri
+	appID, err := h.lookupApplicationByRedirectURI(ctx, redirectURI)
+	if err != nil {
+		h.logger.Printf("Warning: Failed to lookup application for redirect_uri %s: %v", redirectURI, err)
+		// Don't fail the authentication if we can't track the login
+	} else if appID != nil {
+		// Track the login
+		ipAddress := getRealIP(r)
+		userAgent := r.UserAgent()
+		if err := h.trackApplicationLogin(ctx, user.ID, *appID, nil, ipAddress, userAgent); err != nil {
+			h.logger.Printf("Warning: Failed to track application login: %v", err)
+			// Don't fail authentication if tracking fails
+		}
+	}
+
 	// Redirect to application callback with access token
 	// Frontend should extract it and store in memory
 	redirectURL := redirectURI + "/auth/callback?access_token=" + tokens.AccessToken
@@ -329,4 +345,51 @@ func (h *Handler) GetPublicKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(publicKeyPEM)
+}
+
+// lookupApplicationByRedirectURI finds the application ID for a given redirect URI
+func (h *Handler) lookupApplicationByRedirectURI(ctx context.Context, redirectURI string) (*uuid.UUID, error) {
+	query := `
+		SELECT id, origin, redirect_uris
+		FROM applications
+		WHERE is_active = true
+	`
+	rows, err := h.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var appID uuid.UUID
+		var origin string
+		var redirectURIs []string
+		if err := rows.Scan(&appID, &origin, &redirectURIs); err != nil {
+			continue
+		}
+
+		// Check if redirect_uri matches the origin or any registered redirect URI
+		if redirectURI == origin || strings.HasPrefix(redirectURI, origin+"/") {
+			return &appID, nil
+		}
+
+		// Also check against explicitly registered redirect URIs
+		for _, registeredURI := range redirectURIs {
+			if redirectURI == registeredURI || strings.HasPrefix(redirectURI, registeredURI) {
+				return &appID, nil
+			}
+		}
+	}
+
+	return nil, nil // No matching application found (not an error)
+}
+
+// trackApplicationLogin records a login event for an application
+func (h *Handler) trackApplicationLogin(ctx context.Context, userID, appID uuid.UUID, orgID *uuid.UUID, ipAddress *string, userAgent string) error {
+	query := `
+		INSERT INTO user_application_logins (user_id, application_id, organization_id, ip_address, user_agent)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err := h.db.Exec(ctx, query, userID, appID, orgID, ipAddress, userAgent)
+	return err
 }
