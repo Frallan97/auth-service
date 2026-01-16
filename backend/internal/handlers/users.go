@@ -48,26 +48,71 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * pageSize
 
+	// Parse optional application filter
+	applicationIDStr := r.URL.Query().Get("application_id")
+	var applicationID *uuid.UUID
+	if applicationIDStr != "" {
+		parsedID, err := uuid.Parse(applicationIDStr)
+		if err != nil {
+			http.Error(w, "Invalid application_id", http.StatusBadRequest)
+			return
+		}
+		applicationID = &parsedID
+	}
+
+	// Build queries based on whether filtering by application
+	var countQuery string
+	var query string
+	var countArgs []interface{}
+	var queryArgs []interface{}
+
+	if applicationID != nil {
+		// Filter users who have logged into specific application
+		countQuery = `
+			SELECT COUNT(DISTINCT u.id)
+			FROM users u
+			INNER JOIN user_application_logins ual ON u.id = ual.user_id
+			WHERE u.deleted_at IS NULL AND ual.application_id = $1
+		`
+		countArgs = []interface{}{applicationID}
+
+		query = `
+			SELECT DISTINCT u.id, u.email, u.google_id, u.name, u.avatar_url, u.role, u.is_active, u.created_at, u.updated_at, u.deleted_at
+			FROM users u
+			INNER JOIN user_application_logins ual ON u.id = ual.user_id
+			WHERE u.deleted_at IS NULL AND ual.application_id = $1
+			ORDER BY u.created_at DESC
+			LIMIT $2 OFFSET $3
+		`
+		queryArgs = []interface{}{applicationID, pageSize, offset}
+	} else {
+		// No filter - return all users
+		countQuery = `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`
+		countArgs = []interface{}{}
+
+		query = `
+			SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
+			FROM users
+			WHERE deleted_at IS NULL
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`
+		queryArgs = []interface{}{pageSize, offset}
+	}
+
 	// Get total count
 	var total int
-	countQuery := `SELECT COUNT(*) FROM users WHERE deleted_at IS NULL`
-	err := h.db.QueryRow(ctx, countQuery).Scan(&total)
+	err := h.db.QueryRow(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
+		h.logger.Printf("Failed to count users: %v", err)
 		http.Error(w, "Failed to count users", http.StatusInternalServerError)
 		return
 	}
 
 	// Get users
-	query := `
-		SELECT id, email, google_id, name, avatar_url, role, is_active, created_at, updated_at, deleted_at
-		FROM users
-		WHERE deleted_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
-	`
-
-	rows, err := h.db.Query(ctx, query, pageSize, offset)
+	rows, err := h.db.Query(ctx, query, queryArgs...)
 	if err != nil {
+		h.logger.Printf("Failed to query users: %v", err)
 		http.Error(w, "Failed to query users", http.StatusInternalServerError)
 		return
 	}

@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { usersAPI, User } from '../../services/api'
+import { usersAPI, applicationsAPI, User, Application } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function Users() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<User[]>([])
+  const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -14,15 +15,30 @@ export default function Users() {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [applicationFilter, setApplicationFilter] = useState<string>('all')
+
+  useEffect(() => {
+    loadApplications()
+  }, [])
 
   useEffect(() => {
     loadUsers()
-  }, [page])
+  }, [page, applicationFilter])
+
+  const loadApplications = async () => {
+    try {
+      const apps = await applicationsAPI.list()
+      setApplications(apps)
+    } catch (error) {
+      console.error('Failed to load applications:', error)
+    }
+  }
 
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const response = await usersAPI.list(page, 20)
+      const appId = applicationFilter === 'all' ? undefined : applicationFilter
+      const response = await usersAPI.list(page, 20, appId)
       setUsers(response.users)
       setTotalPages(response.total_pages)
       setTotal(response.total)
@@ -31,6 +47,11 @@ export default function Users() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleApplicationFilterChange = (value: string) => {
+    setApplicationFilter(value)
+    setPage(1) // Reset to first page when changing filter
   }
 
   const handleToggleActive = async (user: User) => {
@@ -110,7 +131,7 @@ export default function Users() {
 
       {/* Search and Filters */}
       <div className="mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -123,6 +144,25 @@ export default function Users() {
               placeholder="Search by name or email..."
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          {/* Application Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Application
+            </label>
+            <select
+              value={applicationFilter}
+              onChange={(e) => handleApplicationFilterChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Applications</option>
+              {applications.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Role Filter */}

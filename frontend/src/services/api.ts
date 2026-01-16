@@ -95,10 +95,12 @@ export const authAPI = {
 
 // Users API
 export const usersAPI = {
-  list: async (page = 1, pageSize = 20): Promise<ListUsersResponse> => {
-    const response = await api.get('/api/users', {
-      params: { page, page_size: pageSize },
-    })
+  list: async (page = 1, pageSize = 20, applicationId?: string): Promise<ListUsersResponse> => {
+    const params: any = { page, page_size: pageSize }
+    if (applicationId) {
+      params.application_id = applicationId
+    }
+    const response = await api.get('/api/users', { params })
     return response.data
   },
 
