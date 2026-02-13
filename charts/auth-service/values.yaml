@@ -120,3 +120,9 @@ ingress:
   tls:
     enabled: true
     secretName: auth-service-tls
+
+# Prometheus ServiceMonitor for metrics collection
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s

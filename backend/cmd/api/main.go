@@ -16,6 +16,7 @@ import (
 	"github.com/frans-sjostrom/auth-service/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(chiMiddleware.RequestID)
 	r.Use(chiMiddleware.RealIP)
+	r.Use(middleware.MetricsMiddleware)
 	r.Use(dynamicCORS.Middleware)
 
 	// Health check
@@ -65,6 +67,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// Prometheus metrics endpoint
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Public routes
 	r.Route("/api", func(r chi.Router) {
