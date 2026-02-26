@@ -366,6 +366,20 @@ export interface MyAppLoginStats {
   last_login: string
 }
 
+export interface DailyLoginStats {
+  date: string
+  count: number
+}
+
+export interface AppUserStats {
+  user_id: string
+  email: string
+  name: string
+  avatar_url?: string
+  login_count: number
+  last_login: string
+}
+
 // Statistics API
 export const statsAPI = {
   // Admin stats
@@ -381,6 +395,18 @@ export const statsAPI = {
 
   getApplicationStats: async (): Promise<AppLoginStats[]> => {
     const response = await api.get('/api/stats/applications')
+    return response.data
+  },
+
+  getDailyStats: async (days = 30, appId?: string): Promise<DailyLoginStats[]> => {
+    const params: Record<string, string> = { days: String(days) }
+    if (appId) params.app_id = appId
+    const response = await api.get('/api/stats/logins/daily', { params })
+    return response.data
+  },
+
+  getApplicationUsers: async (appId: string): Promise<AppUserStats[]> => {
+    const response = await api.get(`/api/stats/applications/${appId}/users`)
     return response.data
   },
 

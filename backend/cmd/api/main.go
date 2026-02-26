@@ -168,8 +168,10 @@ func main() {
 
 			// Login statistics (admin only)
 			r.Get("/stats/logins", h.GetLoginStats)
+			r.Get("/stats/logins/daily", h.GetDailyLoginStats)
 			r.Get("/stats/users", h.GetUserLoginStats)
 			r.Get("/stats/applications", h.GetApplicationLoginStats)
+			r.Get("/stats/applications/{id}/users", h.GetApplicationUsers)
 
 			// Personal login statistics (authenticated users)
 			r.Get("/me/stats", h.GetMyLoginStats)

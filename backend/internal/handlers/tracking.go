@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/frans-sjostrom/auth-service/internal/middleware"
 	"github.com/frans-sjostrom/auth-service/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // TrackLogin records a user login to an application
@@ -278,6 +280,151 @@ func (h *Handler) GetOrganizationLoginHistory(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(logins)
+}
+
+// GetDailyLoginStats returns daily login counts for the last N days
+func (h *Handler) GetDailyLoginStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only super admins can view daily stats
+	if !middleware.IsSuperAdmin(ctx) {
+		http.Error(w, "Access denied - super admin required", http.StatusForbidden)
+		return
+	}
+
+	// Parse days parameter (default 30, max 365)
+	days := 30
+	if daysStr := r.URL.Query().Get("days"); daysStr != "" {
+		if parsedDays, err := parseInt(daysStr); err == nil && parsedDays > 0 && parsedDays <= 365 {
+			days = parsedDays
+		}
+	}
+
+	// Optional app_id filter
+	appFilter := r.URL.Query().Get("app_id")
+
+	type DailyStats struct {
+		Date  string `json:"date"`
+		Count int    `json:"count"`
+	}
+
+	var rows pgx.Rows
+
+	if appFilter != "" {
+		appID, err := uuid.Parse(appFilter)
+		if err != nil {
+			http.Error(w, "Invalid app_id", http.StatusBadRequest)
+			return
+		}
+		r2, err := h.db.Query(ctx, `
+			SELECT DATE(created_at) as date, COUNT(*) as count
+			FROM user_application_logins
+			WHERE created_at > NOW() - MAKE_INTERVAL(days := $1)
+			  AND application_id = $2
+			GROUP BY DATE(created_at)
+			ORDER BY date
+		`, days, appID)
+		if err != nil {
+			h.logger.Printf("Failed to query daily login stats: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		rows = r2
+	} else {
+		r2, err := h.db.Query(ctx, `
+			SELECT DATE(created_at) as date, COUNT(*) as count
+			FROM user_application_logins
+			WHERE created_at > NOW() - MAKE_INTERVAL(days := $1)
+			GROUP BY DATE(created_at)
+			ORDER BY date
+		`, days)
+		if err != nil {
+			h.logger.Printf("Failed to query daily login stats: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		rows = r2
+	}
+	defer rows.Close()
+
+	var stats []DailyStats
+	for rows.Next() {
+		var s DailyStats
+		var date time.Time
+		if err := rows.Scan(&date, &s.Count); err != nil {
+			h.logger.Printf("Failed to scan daily stats: %v", err)
+			continue
+		}
+		s.Date = date.Format("2006-01-02")
+		stats = append(stats, s)
+	}
+	if stats == nil {
+		stats = []DailyStats{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// GetApplicationUsers returns users who have logged into a specific application
+func (h *Handler) GetApplicationUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Only super admins can view application users
+	if !middleware.IsSuperAdmin(ctx) {
+		http.Error(w, "Access denied - super admin required", http.StatusForbidden)
+		return
+	}
+
+	appIDStr := chi.URLParam(r, "id")
+	appID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		http.Error(w, "Invalid application ID", http.StatusBadRequest)
+		return
+	}
+
+	query := `
+		SELECT u.id, u.email, u.name, u.avatar_url, COUNT(l.id) as login_count, MAX(l.created_at) as last_login
+		FROM users u
+		JOIN user_application_logins l ON u.id = l.user_id
+		WHERE l.application_id = $1
+		GROUP BY u.id, u.email, u.name, u.avatar_url
+		ORDER BY login_count DESC
+	`
+
+	rows, err := h.db.Query(ctx, query, appID)
+	if err != nil {
+		h.logger.Printf("Failed to query application users: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type AppUser struct {
+		UserID     uuid.UUID `json:"user_id"`
+		Email      string    `json:"email"`
+		Name       string    `json:"name"`
+		AvatarURL  *string   `json:"avatar_url"`
+		LoginCount int       `json:"login_count"`
+		LastLogin  string    `json:"last_login"`
+	}
+
+	var users []AppUser
+	for rows.Next() {
+		var u AppUser
+		if err := rows.Scan(&u.UserID, &u.Email, &u.Name, &u.AvatarURL, &u.LoginCount, &u.LastLogin); err != nil {
+			h.logger.Printf("Failed to scan application user: %v", err)
+			continue
+		}
+		users = append(users, u)
+	}
+
+	if users == nil {
+		users = []AppUser{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }
 
 // Helper functions
